@@ -1,5 +1,6 @@
 This is World of Warcraft authserver written in python.
 Author: Kerhong
+Thanks to: Midna (for bug fixes and testing)
 
 How to set up on amazon ec2:
 
