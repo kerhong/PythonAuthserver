@@ -127,6 +127,10 @@ class TCAuthClient:
                     db_v = accinfo[2]
                     db_s = accinfo[3]
                     
+                    if db_v == None or db_s == None:
+                        db_v = ''
+                        db_s = ''
+
                     self.security = accinfo[6]
                     if self.security == None:
                         self.security = 0
