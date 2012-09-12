@@ -45,13 +45,17 @@ class TCAuthClient:
             msg += part
         return msg
 
+    def SetDB(self, state):
+        if state and self.db == None:
+            self.db = MySQLdb.connect(host=TCAuthSettings.DB_HOST,
+                                     user=TCAuthSettings.DB_USER,
+                                     passwd=TCAuthSettings.DB_PASSWORD,
+                                     db=TCAuthSettings.DB_DATABASE)
+        elif state == False:
+            self.db = None
+
     def handle(self):
         Log("Client connected [IP: {}]".format(self.address[0]))
-    
-        self.db = MySQLdb.connect(host=TCAuthSettings.DB_HOST,
-                                 user=TCAuthSettings.DB_USER,
-                                 passwd=TCAuthSettings.DB_PASSWORD,
-                                 db=TCAuthSettings.DB_DATABASE)
 
         while True:            
             opcode = self.recvall(1)
@@ -76,14 +80,13 @@ class TCAuthClient:
 
         time.sleep(1) # Hack to be 'almost sure' that all data is delivered to client
         self.sock.close()
-        self.db.close()
+        self.SetDB(False)
         Log("Client disconnected [IP: {}]".format(self.address[0]))
 
     def handleAuthLogonChallenge(self):
         Debug("->handleAuthLogonChallenge")
         
-        if self.db == None:
-            return False
+        self.SetDB(True)
         
         result = 0
         
@@ -173,8 +176,7 @@ class TCAuthClient:
     def handleAuthLogonProof(self):
         Debug("->handleAuthLogonProof")   
         
-        if self.db == None:
-            return False
+        self.SetDB(True)
 
         tmp = self.sock.recv(32)
         if len(tmp) != 32: return False
@@ -291,8 +293,7 @@ class TCAuthClient:
             self.sock.sendall(response)
             
             self.authed = True            
-            self.db.close()
-            self.db = None
+            self.SetDB(False)
             return True
     
         Log('Account failed LogonProof [AccName: {}] [IP: {}]'.format(self.login, self.address[0]))
@@ -302,8 +303,7 @@ class TCAuthClient:
     def handleReconnectChallenge(self):
         Debug("->handleReconnectChallenge")
 
-        if self.db == None:
-            return False
+        self.SetDB(True)
 
         header = self.sock.recv(3)
         if len(header) != 3:
@@ -344,8 +344,7 @@ class TCAuthClient:
     def handleReconnectProof(self):
         Debug("->handleReconnectProof")
 
-        if self.db == None:
-            return False
+        self.SetDB(True)
 
         t1 = TCBigNumber()
         R2 = TCBigNumber()
@@ -371,8 +370,7 @@ class TCAuthClient:
         
         if res.GetInt() == R2.GetInt():
             self.authed = True
-            self.db.close()
-            self.db = None
+            self.SetDB(False)
             self.sock.sendall(pack('<BBH', 3, 0, 0))
             return True        
 
@@ -382,6 +380,8 @@ class TCAuthClient:
         Debug("->handleRealmList")
         if not self.authed: return False
         if len(self.sock.recv(4)) != 4: return False
+        
+        self.SetDB(False)
         
         data = ''
         cnt = 0
@@ -407,6 +407,9 @@ class TCAuthClient:
         
     def RecalculateVS(self, pwhash):
         Debug("->RecalculateVS")
+        
+        self.SetDB(True)
+        
         self.crypt_s.SetRand(32)
         I = TCBigNumber()
         I.SetHex(pwhash)        
