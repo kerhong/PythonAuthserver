@@ -18,6 +18,7 @@ class TCAuthClient:
         self.os = 0
         self.gamebuild = 0
         self.security = 0
+        self.db = None
         
         self.crypt_N = TCBigNumber()
         self.crypt_g = TCBigNumber()
@@ -80,6 +81,9 @@ class TCAuthClient:
 
     def handleAuthLogonChallenge(self):
         Debug("->handleAuthLogonChallenge")
+        
+        if self.db == None:
+            return False
         
         result = 0
         
@@ -168,6 +172,9 @@ class TCAuthClient:
 
     def handleAuthLogonProof(self):
         Debug("->handleAuthLogonProof")   
+        
+        if self.db == None:
+            return False
 
         tmp = self.sock.recv(32)
         if len(tmp) != 32: return False
@@ -284,6 +291,8 @@ class TCAuthClient:
             self.sock.sendall(response)
             
             self.authed = True            
+            self.db.close()
+            self.db = None
             return True
     
         Log('Account failed LogonProof [AccName: {}] [IP: {}]'.format(self.login, self.address[0]))
@@ -292,6 +301,9 @@ class TCAuthClient:
 
     def handleReconnectChallenge(self):
         Debug("->handleReconnectChallenge")
+
+        if self.db == None:
+            return False
 
         header = self.sock.recv(3)
         if len(header) != 3:
@@ -332,6 +344,9 @@ class TCAuthClient:
     def handleReconnectProof(self):
         Debug("->handleReconnectProof")
 
+        if self.db == None:
+            return False
+
         t1 = TCBigNumber()
         R2 = TCBigNumber()
 
@@ -356,6 +371,8 @@ class TCAuthClient:
         
         if res.GetInt() == R2.GetInt():
             self.authed = True
+            self.db.close()
+            self.db = None
             self.sock.sendall(pack('<BBH', 3, 0, 0))
             return True        
 
