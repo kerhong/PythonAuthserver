@@ -203,11 +203,13 @@ class TCAuthClient:
         
         for i in range(16):
             t1 += t[i * 2]
-            
+        
+        bytefix = TCBigNumber()    
+        
         sha = hashlib.sha1()
         sha.update(t1)
-        t1 = sha.digest()
-        self.crypt_K.SetBytes(sha.digest())
+        bytefix.SetBytes(sha.digest())
+        t1 = bytefix.GetBytes(20)
         
         t2 = ''
         for i in range(16):
@@ -215,8 +217,8 @@ class TCAuthClient:
             
         sha = hashlib.sha1()
         sha.update(t2)
-        t2 = sha.digest()
-        self.crypt_K.SetBytes(sha.digest())
+        bytefix.SetBytes(sha.digest())
+        t2 = bytefix.GetBytes(20)
         
         vK = ''
         for i in range(20):
@@ -227,15 +229,17 @@ class TCAuthClient:
         
         sha = hashlib.sha1()
         sha.update(self.crypt_N.GetBytes())
-        tmp = sha.digest()
+        bytefix.SetBytes(sha.digest())
+        tmp = bytefix.GetBytes(20)
         
         sha = hashlib.sha1()
         sha.update(self.crypt_g.GetBytes())
+        bytefix.SetBytes(sha.digest())
         
         hsh = ''
         for i in range(20):
             h1 = int(tmp[i].encode('hex'), 16)
-            h2 = int(sha.digest()[i].encode('hex'), 16)
+            h2 = int(bytefix.GetBytes(20)[i].encode('hex'), 16)
             hsh += chr(h1 ^ h2)
         
         t3 = TCBigNumber()
@@ -248,8 +252,8 @@ class TCAuthClient:
         t4.SetBytes(sha.digest())
         
         sha = hashlib.sha1()
-        sha.update(t3.GetBytes())
-        sha.update(t4.GetBytes())
+        sha.update(t3.GetBytes(20))
+        sha.update(t4.GetBytes(20))
         sha.update(self.crypt_s.GetBytes())
         sha.update(A.GetBytes())
         sha.update(self.crypt_B.GetBytes())
