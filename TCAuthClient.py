@@ -78,15 +78,13 @@ class TCAuthClient:
                 if not self.handleRealmList():
                     break
 
+        self.SetDB(False)
         time.sleep(1) # Hack to be 'almost sure' that all data is delivered to client
         self.sock.close()
-        self.SetDB(False)
         Log("Client disconnected [IP: {}]".format(self.address[0]))
 
     def handleAuthLogonChallenge(self):
         Debug("->handleAuthLogonChallenge")
-        
-        self.SetDB(True)
         
         result = 0
         
@@ -110,6 +108,8 @@ class TCAuthClient:
         if TCAuthSettings.ALLOWED_BUILDS.count(self.gamebuild) == 0:
             result = 0x08
         else:
+            self.SetDB(True)
+            
             c = self.db.cursor()
             c.execute("""select bandate, unbandate from ip_banned where ip=%s union all select bandate, unbandate from account_banned b
                          join account a on a.id=b.id and a.username=%s and b.active=1 limit 1""", (self.address[0], self.login))
@@ -175,8 +175,6 @@ class TCAuthClient:
 
     def handleAuthLogonProof(self):
         Debug("->handleAuthLogonProof")   
-        
-        self.SetDB(True)
 
         tmp = self.sock.recv(32)
         if len(tmp) != 32: return False
@@ -272,6 +270,7 @@ class TCAuthClient:
         M.SetBytes(sha.digest())
         
         if M.GetInt() == m1.GetInt():
+            self.SetDB(True)
             Log('Account passed LogonProof [AccName: {}] [IP: {}]'.format(self.login, self.address[0]))
             c = self.db.cursor()
             c.execute("""UPDATE account SET sessionkey=%s, last_ip=%s, last_login=NOW(),
@@ -303,8 +302,6 @@ class TCAuthClient:
     def handleReconnectChallenge(self):
         Debug("->handleReconnectChallenge")
 
-        self.SetDB(True)
-
         header = self.sock.recv(3)
         if len(header) != 3:
             return False
@@ -319,7 +316,9 @@ class TCAuthClient:
         self.login = self.sock.recv(login_len)
         if len(self.login) != login_len:
             return False
-        
+
+        self.SetDB(True)        
+
         c = self.db.cursor()
         c.execute("""select acc.id, acc.sessionkey, max(aca.gmlevel) from account acc left join account_access aca on acc.id=aca.id and aca.RealmID=-1
                      where acc.username=%s""", (self.login,))
@@ -343,8 +342,6 @@ class TCAuthClient:
 
     def handleReconnectProof(self):
         Debug("->handleReconnectProof")
-
-        self.SetDB(True)
 
         t1 = TCBigNumber()
         R2 = TCBigNumber()
@@ -408,8 +405,6 @@ class TCAuthClient:
     def RecalculateVS(self, pwhash):
         Debug("->RecalculateVS")
         
-        self.SetDB(True)
-        
         self.crypt_s.SetRand(32)
         I = TCBigNumber()
         I.SetHex(pwhash)        
@@ -419,6 +414,7 @@ class TCAuthClient:
         x = TCBigNumber()
         x.SetBytes(sha.digest())        
         self.crypt_v = self.crypt_g.ModExp(x.GetInt(), self.crypt_N.GetInt())
+        self.SetDB(True)
         c = self.db.cursor()
         c.execute("""UPDATE account SET v=%s, s=%s WHERE username=%s""", (self.crypt_v.GetHex(),
                                                                           self.crypt_s.GetHex(),
