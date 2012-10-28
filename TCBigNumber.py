@@ -8,7 +8,7 @@ class TCBigNumber:
         self.n = i
         
     def SetHex(self, i):
-        self.n = int(i.lower().rstrip('l').lstrip('0x'), 16)
+        self.n = int(self.StripHex(i), 16)
     
     def SetBytes(self, i):        
         self.SetHex(i.encode('hex'))
@@ -22,8 +22,17 @@ class TCBigNumber:
     def SetRand(self, l):
         self.SetHex(''.join(chr(random.randrange(0, 255)) for i in range(l)).encode('hex'))
     
+    def StripHex(self, h):
+        h = h.lower()
+        if h.endswith('l'):
+            h = h[:-1]
+        if h.startswith('0x'):
+            h = h[2:]
+        return h
+        
+    
     def GetHex(self):
-        res = hex(self.n).lower().rstrip('l').lstrip('0x')
+        res = self.StripHex(hex(self.n))
         if len(res) % 2:
             res = '0' + res
         return res
