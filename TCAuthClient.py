@@ -2,14 +2,13 @@ import threading
 from struct import unpack, pack
 from TCAuthSettings import TCAuthSettings, Log, Debug
 from TCBigNumber import TCBigNumber
-import MySQLdb
 import random
 import hashlib
 import time
 from copy import deepcopy
 
 class TCAuthClient:
-    def __init__(self, sock, address, server):
+    def __init__(self, sock, address, server, dbpool):
         self.server = server
         self.sock = sock
         self.address = address
@@ -18,7 +17,7 @@ class TCAuthClient:
         self.os = 0
         self.gamebuild = 0
         self.security = 0
-        self.db = None
+        self.db = dbpool
         
         self.crypt_N = TCBigNumber()
         self.crypt_g = TCBigNumber()
@@ -45,15 +44,6 @@ class TCAuthClient:
             msg += part
         return msg
 
-    def SetDB(self, state):
-        if state and self.db == None:
-            self.db = MySQLdb.connect(host=TCAuthSettings.DB_HOST,
-                                     user=TCAuthSettings.DB_USER,
-                                     passwd=TCAuthSettings.DB_PASSWORD,
-                                     db=TCAuthSettings.DB_DATABASE)
-        elif state == False:
-            self.db = None
-
     def handle(self):
         Log("Client connected [IP: {}]".format(self.address[0]))
 
@@ -78,7 +68,6 @@ class TCAuthClient:
                 if not self.handleRealmList():
                     break
 
-        self.SetDB(False)
         time.sleep(1) # Hack to be 'almost sure' that all data is delivered to client
         self.sock.close()
         Log("Client disconnected [IP: {}]".format(self.address[0]))
@@ -107,25 +96,18 @@ class TCAuthClient:
 
         if TCAuthSettings.ALLOWED_BUILDS.count(self.gamebuild) == 0:
             result = 0x08
-        else:
-            self.SetDB(True)
-            
-            c = self.db.cursor()
-            c.execute("""select bandate, unbandate from ip_banned where ip=%s union all select bandate, unbandate from account_banned b
+        else:            
+            ban = self.db.QueryOne("""select bandate, unbandate from ip_banned where ip=%s union all select bandate, unbandate from account_banned b
                          join account a on a.id=b.id and a.username=%s and b.active=1 limit 1""", (self.address[0], self.login))
-            ban = c.fetchone()
             if ban != None:
                 if ban[0] == ban[1]:
                     result = 0x03 # Permanent ban
                 else:
                     result = 0x0C # Temporary ban
             else:
-                c = self.db.cursor()
-                c.execute("""select acc.id, acc.sha_pass_hash, acc.v, acc.s, acc.locked, acc.last_ip, max(aca.gmlevel)
+                accinfo = self.db.QueryOne("""select acc.id, acc.sha_pass_hash, acc.v, acc.s, acc.locked, acc.last_ip, max(aca.gmlevel)
                              from account acc left join account_access aca on acc.id=aca.id and aca.RealmID=-1
-                             where acc.username=%s""", (self.login,))
-                accinfo = c.fetchone()
-    
+                             where acc.username=%s""", (self.login,))    
                 if accinfo == None or accinfo[0] == None:
                     result = 0x04 # Wrong username
                 elif accinfo[4] != 0 and accinfo[5] != self.address[0]:
@@ -270,10 +252,8 @@ class TCAuthClient:
         M.SetBytes(sha.digest())
         
         if M.GetInt() == m1.GetInt():
-            self.SetDB(True)
             Log('Account passed LogonProof [AccName: {}] [IP: {}]'.format(self.login, self.address[0]))
-            c = self.db.cursor()
-            c.execute("""UPDATE account SET sessionkey=%s, last_ip=%s, last_login=NOW(),
+            self.db.QueryOne("""UPDATE account SET sessionkey=%s, last_ip=%s, last_login=NOW(),
                          locale=%s, operatingSystem=%s WHERE username=%s""", (self.crypt_K.GetHex(),
                                                                               self.address[0],
                                                                               self.locale,
@@ -291,8 +271,7 @@ class TCAuthClient:
             response += pack('<IIH', 0x00800000, 0, 0)
             self.sock.sendall(response)
             
-            self.authed = True            
-            self.SetDB(False)
+            self.authed = True
             return True
     
         Log('Account failed LogonProof [AccName: {}] [IP: {}]'.format(self.login, self.address[0]))
@@ -317,12 +296,8 @@ class TCAuthClient:
         if len(self.login) != login_len:
             return False
 
-        self.SetDB(True)        
-
-        c = self.db.cursor()
-        c.execute("""select acc.id, acc.sessionkey, max(aca.gmlevel) from account acc left join account_access aca on acc.id=aca.id and aca.RealmID=-1
+        accinfo = self.db.QueryOne("""select acc.id, acc.sessionkey, max(aca.gmlevel) from account acc left join account_access aca on acc.id=aca.id and aca.RealmID=-1
                      where acc.username=%s""", (self.login,))
-        accinfo = c.fetchone()
         if accinfo == None or accinfo[0] == None:
             return False
         
@@ -367,7 +342,6 @@ class TCAuthClient:
         
         if res.GetInt() == R2.GetInt():
             self.authed = True
-            self.SetDB(False)
             self.sock.sendall(pack('<BBH', 3, 0, 0))
             return True        
 
@@ -377,8 +351,6 @@ class TCAuthClient:
         Debug("->handleRealmList")
         if not self.authed: return False
         if len(self.sock.recv(4)) != 4: return False
-        
-        self.SetDB(False)
         
         data = ''
         cnt = 0
@@ -414,8 +386,6 @@ class TCAuthClient:
         x = TCBigNumber()
         x.SetBytes(sha.digest())        
         self.crypt_v = self.crypt_g.ModExp(x.GetInt(), self.crypt_N.GetInt())
-        self.SetDB(True)
-        c = self.db.cursor()
-        c.execute("""UPDATE account SET v=%s, s=%s WHERE username=%s""", (self.crypt_v.GetHex(),
+        self.db.QueryOne("""UPDATE account SET v=%s, s=%s WHERE username=%s""", (self.crypt_v.GetHex(),
                                                                           self.crypt_s.GetHex(),
                                                                           self.login))

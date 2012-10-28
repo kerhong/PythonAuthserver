@@ -1,29 +1,26 @@
 import threading
-from TCAuthSettings import TCAuthSettings, Log, Debug
-import MySQLdb
+from TCAuthSettings import TCAuthSettings, Debug
 import time
 
 class TCRealmlist:
-    def run(self, server):
+    def run(self, server, db):
+        self.db = db
         self.server = server
         th = threading.Thread(target=self.handle)
         th.start()
         
     def handle(self):
         Debug("Realmlist thread started")
-
-        self.db = MySQLdb.connect(host=TCAuthSettings.DB_HOST,
-                                 user=TCAuthSettings.DB_USER,
-                                 passwd=TCAuthSettings.DB_PASSWORD,
-                                 db=TCAuthSettings.DB_DATABASE)
         
         while True:
-            c = self.db.cursor()
-            c.execute("""DELETE FROM ip_banned WHERE unbandate<>bandate AND unbandate<=UNIX_TIMESTAMP()""")
-            c.execute("""UPDATE account_banned SET active = 0 WHERE active = 1 AND unbandate<>bandate AND unbandate<=UNIX_TIMESTAMP()""")
-            c.execute("""select id, name, address, port, icon, color, timezone, allowedsecuritylevel, population, gamebuild from realmlist""")
+            self.db.QueryOne("""DELETE FROM ip_banned WHERE unbandate<>bandate AND unbandate<=UNIX_TIMESTAMP()""")
+            self.db.QueryOne("""UPDATE account_banned SET active = 0 WHERE active = 1 AND unbandate<>bandate AND unbandate<=UNIX_TIMESTAMP()""")
+            res = self.db.QueryAll("""select id, name, address, port, icon, color, timezone, allowedsecuritylevel, population, gamebuild from realmlist""")
+            
+            if res == None:
+                Debug("No realms")
+                continue
 
-            res = c.fetchall()
             tmp = []            
             for r in res:
                 tmp.append({
