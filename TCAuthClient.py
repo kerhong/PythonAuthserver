@@ -6,6 +6,7 @@ import random
 import hashlib
 import time
 from copy import deepcopy
+from ATGoogleAuth import ATGoogleAuth
 
 class TCAuthClient:
     def __init__(self, sock, address, server, dbpool):
@@ -18,6 +19,7 @@ class TCAuthClient:
         self.gamebuild = 0
         self.security = 0
         self.db = dbpool
+        self.authenticator = None
         
         self.crypt_N = TCBigNumber()
         self.crypt_g = TCBigNumber()
@@ -105,9 +107,9 @@ class TCAuthClient:
                 else:
                     result = 0x0C # Temporary ban
             else:
-                accinfo = self.db.QueryOne("""select acc.id, acc.sha_pass_hash, acc.v, acc.s, acc.locked, acc.last_ip, max(aca.gmlevel)
-                             from account acc left join account_access aca on acc.id=aca.id and aca.RealmID=-1
-                             where acc.username=%s""", (self.login,))    
+                accinfo = self.db.QueryOne("""select acc.id, acc.sha_pass_hash, acc.v, acc.s, acc.locked, acc.last_ip, max(aca.gmlevel), aau.authentificator
+                    from account acc left join account_access aca on acc.id=aca.id and aca.RealmID=-1 left join account_authentificator aau on acc.id=aau.account
+                    where acc.username=%s""", (self.login,))    
                 if accinfo == None or accinfo[0] == None:
                     result = 0x04 # Wrong username
                 elif accinfo[4] != 0 and accinfo[5] != self.address[0]:
@@ -119,6 +121,8 @@ class TCAuthClient:
                     if db_v == None or db_s == None:
                         db_v = ''
                         db_s = ''
+
+                    self.authenticator = accinfo[7]
 
                     self.security = accinfo[6]
                     if self.security == None:
@@ -145,7 +149,10 @@ class TCAuthClient:
                     response += self.crypt_N.GetBytes(32)
                     response += self.crypt_s.GetBytes(32)
                     response += unk3.GetBytes(16)
-                    response += pack('<B', 0)
+                    if self.authenticator:
+                        response += pack('<BB', 4, 1)
+                    else:
+                        response += pack('<B', 0)
     
                     Log("Account passed LogonChallenge [AccName: {}] [IP: {}]".format(self.login, self.address[0]))
                     self.sock.sendall(response)
@@ -175,7 +182,7 @@ class TCAuthClient:
         crc.SetBytes(tmp)
         
         if len(self.sock.recv(2)) != 2: return False
-        
+
         sha = hashlib.sha1()
         sha.update(A.GetBytes())
         sha.update(self.crypt_B.GetBytes())
@@ -250,8 +257,28 @@ class TCAuthClient:
         
         M = TCBigNumber()
         M.SetBytes(sha.digest())
-        
+
         if M.GetInt() == m1.GetInt():
+            if self.authenticator:
+                passed = False
+                tmp = self.sock.recv(1)
+                if len(tmp) == 1:
+                    tmp = unpack('<B', tmp)[0]
+                    key = self.sock.recv(tmp)
+                    if len(key) == tmp:
+                        try:
+                            key = int(key)
+                            print key
+                            if ATGoogleAuth(self.authenticator, key):
+                                passed = True
+                        except ValueError:
+                            passed = False
+                if not passed:
+                    Log('Account failed LogonProof (otc) [AccName: {}] [IP: {}]'.format(self.login, self.address[0]))
+                    self.sock.sendall(pack('<BBBB', 1, 4, 3, 0))
+                    return False
+                
+
             Log('Account passed LogonProof [AccName: {}] [IP: {}]'.format(self.login, self.address[0]))
             self.db.QueryOne("""UPDATE account SET sessionkey=%s, last_ip=%s, last_login=NOW(),
                          locale=%s, operatingSystem=%s WHERE username=%s""", (self.crypt_K.GetHex(),
