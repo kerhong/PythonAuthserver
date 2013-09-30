@@ -1,0 +1,9 @@
+# use glob syntax.
+syntax: glob
+
+*.pyc
+*.project
+*.pydevproject
+
+# use regexp syntax.
+syntax: regexp
